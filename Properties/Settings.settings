@@ -1,0 +1,15 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="Rfid2Lan.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="cfgIP" Type="System.String" Scope="User">
+      <Value Profile="(Default)">192.168.1.108</Value>
+    </Setting>
+    <Setting Name="cfgPort" Type="System.String" Scope="User">
+      <Value Profile="(Default)">80</Value>
+    </Setting>
+    <Setting Name="cfgRes" Type="System.String" Scope="User">
+      <Value Profile="(Default)">nano_rfid.php</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
