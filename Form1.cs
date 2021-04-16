@@ -5,6 +5,7 @@ using System.Data;
 using System.Drawing;
 using System.IO.Ports;
 using System.Linq;
+using System.Management;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -21,21 +22,146 @@ namespace Rfid2Lan
         }
 
         List<String> dataToSend = new List<string>();
+        List<COMPortInfo> comports = new List<COMPortInfo>();
+        List<USBDeviceInfo> usbDevices = new List<USBDeviceInfo>();
+
         private void Form1_Load(object sender, EventArgs e)
         {
+
+            //var usbDevices = USBDeviceInfo.GetUSBDevices();
+
+            //foreach (var usbDevice in usbDevices)
+            //{
+            //    Console.WriteLine("Device ID: {0}, PNP Device ID: {1}, Description: {2}",
+            //        usbDevice.DeviceID, usbDevice.PnpDeviceID, usbDevice.Description);
+            //}
+
+
             string[] ports = SerialPort.GetPortNames();
-            
-          
+
+            comports = COMPortInfo.GetCOMPortsInfo();
+
+            //foreach (COMPortInfo port in comports)
+            //{
+            //    cbSerialPort.Items.Add(port.Name);
+            //};
+
+
             foreach (string port in ports)
             {
                 cbSerialPort.Items.Add(port);
             };
+
+
             label5.Text = GetMacAddress();
             Console.WriteLine(label5.Text);
 
             tbServerIP.Text = Properties.Settings.Default["cfgIP"].ToString();
             tbPort.Text = Properties.Settings.Default["cfgPort"].ToString();
             tbResource.Text = Properties.Settings.Default["cfgRes"].ToString();
+        }
+
+
+        public class COMPortInfo
+        {
+            internal class ProcessConnection
+            {
+                public static ConnectionOptions ProcessConnectionOptions()
+                {
+                    ConnectionOptions options = new ConnectionOptions();
+                    options.Impersonation = ImpersonationLevel.Impersonate;
+                    options.Authentication = AuthenticationLevel.Default;
+                    options.EnablePrivileges = true;
+                    return options;
+                }
+
+                public static ManagementScope ConnectionScope(string machineName, ConnectionOptions options, string path)
+                {
+                    ManagementScope connectScope = new ManagementScope();
+                    connectScope.Path = new ManagementPath(@"\\" + machineName + path);
+                    connectScope.Options = options;
+                    connectScope.Connect();
+                    return connectScope;
+                }
+            }
+
+            public string Name { get; set; }
+
+            public string Description { get; set; }
+
+            public COMPortInfo() { }
+
+            public static List<COMPortInfo> GetCOMPortsInfo()
+                {
+
+                    List<COMPortInfo> comPortInfoList = new List<COMPortInfo>();
+                    ConnectionOptions options = ProcessConnection.ProcessConnectionOptions();
+                    ManagementScope connectionScope = ProcessConnection.ConnectionScope(Environment.MachineName, options, @"\root\CIMV2");
+                    ObjectQuery objectQuery = new ObjectQuery("SELECT * FROM Win32_PnPEntity WHERE ConfigManagerErrorCode = 0");
+                    ManagementObjectSearcher comPortSearcher = new ManagementObjectSearcher(connectionScope, objectQuery);
+                    using (comPortSearcher)
+                    {
+
+                        string caption = null;
+                        foreach (ManagementObject obj in comPortSearcher.Get())
+                        {
+                            if (obj != null)
+                            {
+                                object captionObj = obj["Caption"];
+                         
+                                if (captionObj != null)
+                                {
+                                    caption = captionObj.ToString();
+                                    Console.WriteLine(caption);
+
+                                    if (caption.Contains("RFID"))
+                                    {
+                                        COMPortInfo comPortInfo = new COMPortInfo();
+                                        comPortInfo.Name = caption.Substring(caption.LastIndexOf("(COM")).Replace("(", string.Empty).Replace(")", string.Empty);
+                                        comPortInfo.Description = caption;
+                                        comPortInfoList.Add(comPortInfo);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return comPortInfoList;
+                }
+          }
+
+         public class USBDeviceInfo
+        {
+            public USBDeviceInfo(string deviceID, string pnpDeviceID, string description)
+            {
+                this.DeviceID = deviceID;
+                this.PnpDeviceID = pnpDeviceID;
+                this.Description = description;
+            }
+            public string DeviceID { get; private set; }
+            public string PnpDeviceID { get; private set; }
+            public string Description { get; private set; }
+
+
+            public static List<USBDeviceInfo> GetUSBDevices()
+            {
+                List<USBDeviceInfo> devices = new List<USBDeviceInfo>();
+
+                ManagementObjectCollection collection;
+                using (var searcher = new ManagementObjectSearcher(@"Select * From Win32_USBHub")) //Win32_PnPEntity
+                    collection = searcher.Get();
+
+                foreach (var device in collection)
+                {
+                    devices.Add(new USBDeviceInfo(
+                    (string)device.GetPropertyValue("DeviceID"),
+                    (string)device.GetPropertyValue("PNPDeviceID"),
+                    (string)device.GetPropertyValue("Description")
+                    ));
+                }
+
+                collection.Dispose();
+                return devices;
+            }
         }
 
 
@@ -96,7 +222,9 @@ namespace Rfid2Lan
                 {
                     if (serialPort1.IsOpen)
                     {
+                        //OK solo dalla seconda lettura del badge (alla prima lettura dataToSend[0]="")
                         dataToSend.Add(serialPort1.ReadLine());
+                        var content = dataToSend;
                        // rtbLog.AppendText(dataToSend[0] + Environment.NewLine);
                     };
                     System.Threading.Thread.Sleep(500);
@@ -137,11 +265,15 @@ namespace Rfid2Lan
                     webClient.Credentials = new NetworkCredential(USER, PASS);
 
                     string dds = string.Format("http://{0}:{1}/{2}?mac={3}&id={4}", tbServerIP.Text, tbPort.Text, tbResource.Text, GetMacAddress(), dataToSend[0].ToString().Replace("\n","").Replace("\r",""));
+                    //string dds = string.Format("http://{0}:{1}/{2}?mac={3}&id={4}", tbServerIP.Text, tbPort.Text, tbResource.Text, GetMacAddress(), dataToSend[0].ToString().Replace("\n", "").Replace("\r", "").Replace("-", ""));
                     rtbLog.AppendText(dds+Environment.NewLine);
-                    byte[] xmlResponse = webClient.DownloadData(new Uri(dds));
-                    string s = System.Text.Encoding.Default.GetString(xmlResponse, 0, xmlResponse.Length);
+                    //Catturo la response del servizio
+                    //byte[] xmlResponse = webClient.DownloadData(new Uri(dds));
+                    //string s = System.Text.Encoding.Default.GetString(xmlResponse, 0, xmlResponse.Length);
 
-                    dataToSend.RemoveAt(0);
+                    dataToSend.Clear();
+
+                    //dataToSend.RemoveAt(0);
                 }
                 catch (Exception exc)
                 {
